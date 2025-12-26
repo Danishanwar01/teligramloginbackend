@@ -8,152 +8,78 @@ dotenv.config();
 
 const app = express();
 
-// ✅ CORS - Allow all origins for debugging
 app.use(cors({
-  origin: "*", // Temporarily allow all for testing
-  methods: ["GET", "POST", "OPTIONS"],
-  credentials: true
+  origin: "*",
+  methods: ["GET"],
 }));
 
-app.use(express.json());
-
-// Log all requests
+// logger
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
   next();
 });
 
 function verifyTelegramLogin(data) {
-  const botToken = process.env.BOT_TOKEN;
-  console.log("Bot Token exists:", !!botToken);
-  
-  if (!botToken) {
-    console.error("BOT_TOKEN not found in environment");
-    return false;
-  }
-
   const secretKey = crypto
     .createHash("sha256")
-    .update(botToken)
+    .update(process.env.BOT_TOKEN)
     .digest();
 
-  // Create check string
   const checkString = Object.keys(data)
-    .filter(key => key !== "hash")
+    .filter(k => k !== "hash")
     .sort()
-    .map(key => `${key}=${data[key]}`)
+    .map(k => `${k}=${data[k]}`)
     .join("\n");
 
-  console.log("Check String:", checkString);
-
-  const hmac = crypto
+  const hash = crypto
     .createHmac("sha256", secretKey)
     .update(checkString)
     .digest("hex");
 
-  console.log("Calculated Hash:", hmac);
-  console.log("Received Hash:", data.hash);
-
-  return hmac === data.hash;
+  return hash === data.hash;
 }
 
-app.post("/api/auth/telegram", (req, res) => {
-  console.log("🔵 Telegram Auth Request Received");
-  console.log("Request Body:", req.body);
+// ✅ TELEGRAM CALLBACK (GET ONLY)
+app.get("/api/auth/telegram", (req, res) => {
+  console.log("✅ Telegram callback hit");
+  console.log("Query:", req.query);
 
-  const data = req.body;
+  const data = req.query;
 
-  if (!data || !data.hash) {
-    console.error("❌ No hash in request");
-    return res.status(400).json({ 
-      message: "Invalid payload",
-      received: data 
-    });
+  if (!data.hash) {
+    return res.status(400).send("Invalid Telegram payload");
   }
 
-  // Check auth date
   const now = Math.floor(Date.now() / 1000);
   if (now - data.auth_date > 86400) {
-    console.error("❌ Auth expired");
-    return res.status(401).json({ 
-      message: "Auth expired",
-      auth_date: data.auth_date,
-      current_time: now 
-    });
+    return res.status(401).send("Auth expired");
   }
 
-  // Verify Telegram data
-  const isValid = verifyTelegramLogin(data);
-  console.log("Verification Result:", isValid);
-
-  if (!isValid) {
-    console.error("❌ Invalid Telegram data");
-    return res.status(401).json({ 
-      message: "Invalid Telegram data",
-      verification_failed: true 
-    });
+  if (!verifyTelegramLogin(data)) {
+    return res.status(401).send("Telegram verification failed");
   }
 
-  // Create user object
   const user = {
     telegramId: data.id,
-    name: data.first_name + (data.last_name ? ' ' + data.last_name : ''),
-    username: data.username || null,
-    photo: data.photo_url || null
+    name: data.first_name + (data.last_name ? ` ${data.last_name}` : ""),
+    username: data.username,
+    photo: data.photo_url
   };
 
-  console.log("✅ User authenticated:", user);
-
-  // Create JWT token
   const token = jwt.sign(user, process.env.JWT_SECRET, {
     expiresIn: "7d"
   });
 
-  // Send success response
-  return res.json({
-    success: true,
-    message: "Login successful",
-    token,
-    user,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Test endpoint
-app.get("/api/test", (req, res) => {
-  res.json({
-    status: "Backend is running",
-    bot_token_set: !!process.env.BOT_TOKEN,
-    timestamp: new Date().toISOString()
-  });
+  // 🔁 redirect BACK to frontend with token
+  res.redirect(
+    `https://teligramlogin.vercel.app/?token=${token}`
+  );
 });
 
 app.get("/", (req, res) => {
-  res.send(`
-    <html>
-      <head><title>Telegram Auth Backend</title></head>
-      <body>
-        <h1>🚀 Telegram Auth Backend is running</h1>
-        <p>Endpoints:</p>
-        <ul>
-          <li><a href="/api/test">/api/test</a> - Test endpoint</li>
-          <li>POST /api/auth/telegram - Telegram auth</li>
-        </ul>
-        <p>Bot Token: ${process.env.BOT_TOKEN ? 'Set ✅' : 'Not Set ❌'}</p>
-        <p>JWT Secret: ${process.env.JWT_SECRET ? 'Set ✅' : 'Not Set ❌'}</p>
-      </body>
-    </html>
-  `);
+  res.send("Telegram Auth Backend Running");
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`
-  ==========================================
-  🚀 Server running on port ${PORT}
-  ==========================================
-  Bot Token: ${process.env.BOT_TOKEN ? 'Loaded' : 'NOT LOADED!'}
-  JWT Secret: ${process.env.JWT_SECRET ? 'Loaded' : 'NOT LOADED!'}
-  ==========================================
-  `);
+app.listen(process.env.PORT || 5000, () => {
+  console.log("🚀 Server running");
 });
