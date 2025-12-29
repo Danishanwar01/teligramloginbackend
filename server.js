@@ -39,19 +39,17 @@ function verifyTelegramLogin(data) {
   return hash === data.hash;
 }
 
-// ✅ TELEGRAM CALLBACK (GET ONLY)
 app.get("/api/auth/telegram", (req, res) => {
-  console.log("✅ Telegram callback hit");
-  console.log("Query:", req.query);
-
   const data = req.query;
 
   if (!data.hash) {
     return res.status(400).send("Invalid Telegram payload");
   }
 
+  const authDate = Number(data.auth_date);
   const now = Math.floor(Date.now() / 1000);
-  if (now - data.auth_date > 86400) {
+
+  if (now - authDate > 86400) {
     return res.status(401).send("Auth expired");
   }
 
@@ -61,16 +59,15 @@ app.get("/api/auth/telegram", (req, res) => {
 
   const user = {
     telegramId: data.id,
-    name: data.first_name + (data.last_name ? ` ${data.last_name}` : ""),
-    username: data.username,
-    photo: data.photo_url
+    name: `${data.first_name || ""} ${data.last_name || ""}`.trim(),
+    username: data.username || null,
+    photo: data.photo_url || null
   };
 
   const token = jwt.sign(user, process.env.JWT_SECRET, {
     expiresIn: "7d"
   });
 
-  // 🔁 redirect BACK to frontend with token
   res.redirect(
     `https://teligramlogin.vercel.app/?token=${token}`
   );
