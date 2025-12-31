@@ -85,7 +85,7 @@ app.get("/api/auth/telegram", (req, res) => {
   });
 
   // redirect to frontend
-  res.redirect("https://teligramlogin.vercel.app/dashboard");
+  res.redirect("https://teligramlogin.vercel.app");
 });
 
 // ================== CHECK LOGIN ==================
